@@ -13,7 +13,7 @@ import (
 )
 
 func readPassword(prompt string) ([]byte, error) {
-	fmt.Fprint(os.Stderr, prompt)
+	fmt.Fprint(os.Stderr, cliThemeFor(os.Stderr).accent.Render(prompt))
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Fprintln(os.Stderr)
 	if err != nil {

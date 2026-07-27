@@ -106,14 +106,24 @@ func TestExpiredMetadataStatus(t *testing.T) {
 	entry := newEntry()
 	expiration := "2000-01-01"
 	entry.ExpiresAt = &expiration
-	plain := formatMetadata("expired/account", entry, expiredStatus(false))
+	plainTheme := cliTheme{}
+	plain := formatMetadata(
+		"expired/account", entry, expiredStatus(plainTheme), plainTheme)
 	if !strings.Contains(plain, "status:      EXPIRED\n") ||
 		strings.Contains(plain, "\x1b[") {
 		t.Fatalf("unexpected plain metadata: %q", plain)
 	}
-	colored := formatMetadata("expired/account", entry, expiredStatus(true))
-	if !strings.Contains(colored, "\x1b[1;31mEXPIRED\x1b[0m") {
-		t.Fatalf("colored metadata lacks highlighted status: %q", colored)
+}
+
+func TestFormThemeDefinesInputAndTextareaCursorColors(t *testing.T) {
+	for _, dark := range []bool{false, true} {
+		cursor := formStyles(dark).Focused.TextInput.Cursor
+		if cursor.GetForeground() == nil {
+			t.Fatalf("form theme cursor has no foreground color (dark=%v)", dark)
+		}
+		if cursor.GetBackground() == nil {
+			t.Fatalf("form theme cursor has no textarea background color (dark=%v)", dark)
+		}
 	}
 }
 

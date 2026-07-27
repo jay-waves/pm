@@ -77,7 +77,7 @@ func isExpired(entry Entry) bool {
 	return entry.ExpiresAt != nil && *entry.ExpiresAt <= today()
 }
 
-func formatMetadata(name string, entry Entry, status string) string {
+func formatMetadata(name string, entry Entry, status string, theme cliTheme) string {
 	identity, expires, notes := entry.Identity, "-", entry.Notes
 	if identity == "" {
 		identity = "-"
@@ -88,18 +88,21 @@ func formatMetadata(name string, entry Entry, status string) string {
 	if notes == "" {
 		notes = "-"
 	}
-	metadata := fmt.Sprintf(
-		"entry:       %s\nidentity:    %s\ncreated:     %s\nmodified:    %s\nexpires:     %s\nnotes:       %s\n",
-		name, identity, entry.CreatedAt, entry.ModifiedAt, expires, notes)
+	line := func(label, value string) string {
+		return fmt.Sprintf("%s%s\n", theme.muted.Render(label), theme.text.Render(value))
+	}
+	metadata := line("entry:       ", name) +
+		line("identity:    ", identity) +
+		line("created:     ", entry.CreatedAt) +
+		line("modified:    ", entry.ModifiedAt) +
+		line("expires:     ", expires) +
+		line("notes:       ", notes)
 	if status != "" {
-		return fmt.Sprintf("status:      %s\n%s", status, metadata)
+		return theme.muted.Render("status:      ") + status + "\n" + metadata
 	}
 	return metadata
 }
 
-func expiredStatus(color bool) string {
-	if color {
-		return "\x1b[1;31mEXPIRED\x1b[0m"
-	}
-	return "EXPIRED"
+func expiredStatus(theme cliTheme) string {
+	return theme.strong(theme.danger, "EXPIRED")
 }

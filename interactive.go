@@ -176,7 +176,7 @@ func runEditForm(name string, entry Entry) (Entry, error) {
 func secretInput(title string, value *string, required bool) *huh.Input {
 	field := huh.NewInput().
 		Title(title).
-		EchoMode(huh.EchoModeNone).
+		EchoMode(huh.EchoModePassword).
 		CharLimit(maxSecretLength).
 		Value(value)
 	if required {
@@ -193,7 +193,7 @@ func secretInput(title string, value *string, required bool) *huh.Input {
 func secretConfirmationInput(value *string, expected func() string) *huh.Input {
 	return huh.NewInput().
 		Title("Confirm secret").
-		EchoMode(huh.EchoModeNone).
+		EchoMode(huh.EchoModePassword).
 		CharLimit(maxSecretLength).
 		Validate(func(input string) error {
 			if input != expected() {
@@ -214,7 +214,7 @@ func safeNotesField(value *string) *huh.Text {
 }
 
 func runForm(form *huh.Form) error {
-	if err := form.Run(); err != nil {
+	if err := form.WithTheme(formTheme).Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return errCancelled
 		}
@@ -224,7 +224,7 @@ func runForm(form *huh.Form) error {
 }
 
 func runField(field huh.Field) error {
-	if err := huh.Run(field); err != nil {
+	if err := huh.Run(field.WithTheme(formTheme)); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return errCancelled
 		}

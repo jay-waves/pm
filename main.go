@@ -34,18 +34,19 @@ Usage:
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		fmt.Fprintln(os.Stderr, "pm:", err)
+		theme := cliThemeFor(os.Stderr)
+		fmt.Fprintln(os.Stderr, theme.strong(theme.danger, "pm:"), err)
 		os.Exit(1)
 	}
 }
 
 func run(arguments []string) error {
 	if len(arguments) == 0 || arguments[0] == "-h" || arguments[0] == "--help" {
-		fmt.Print(usage())
+		fmt.Print(formatUsageOutput(usage(), cliThemeFor(os.Stdout)))
 		return nil
 	}
 	if arguments[0] == "--version" {
-		fmt.Println(version)
+		fmt.Println(cliThemeFor(os.Stdout).accent.Render(version))
 		return nil
 	}
 	if arguments[0] == "--internal-clear-clipboard" {
@@ -77,7 +78,8 @@ func run(arguments []string) error {
 		if err := initVault(root, password); err != nil {
 			return err
 		}
-		fmt.Printf("Initialized vault at %s\n", root)
+		theme := cliThemeFor(os.Stdout)
+		fmt.Println(theme.success.Render(fmt.Sprintf("Initialized vault at %s", root)))
 		return nil
 	}
 	if command == "generate" {
@@ -93,7 +95,9 @@ func run(arguments []string) error {
 		if err := copyToClipboard(secret, clipboardClearDelay); err != nil {
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "Generated secret copied; clipboard will be cleared in 1 minute.")
+		theme := cliThemeFor(os.Stderr)
+		fmt.Fprintln(os.Stderr, theme.warning.Render(
+			"Generated secret copied; clipboard will be cleared in 1 minute."))
 		return nil
 	}
 	if command == "import" {
@@ -113,7 +117,9 @@ func run(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Imported %d encrypted entries into %s\n", count, root)
+		theme := cliThemeFor(os.Stdout)
+		fmt.Println(theme.success.Render(
+			fmt.Sprintf("Imported %d encrypted entries into %s", count, root)))
 		return nil
 	}
 	if command == "ls" || command == "find" {
@@ -138,14 +144,14 @@ func run(arguments []string) error {
 			if err != nil {
 				return err
 			}
-			fmt.Print(formatTree(entries))
+			fmt.Print(formatTreeWithTheme(entries, cliThemeFor(os.Stdout)))
 		} else {
 			entries, err := vault.Find(args[0])
 			if err != nil {
 				return err
 			}
 			for _, entry := range entries {
-				fmt.Println(entry)
+				fmt.Println(formatEntryPath(entry, cliThemeFor(os.Stdout)))
 			}
 		}
 		return nil
@@ -191,8 +197,8 @@ func run(arguments []string) error {
 		}
 		if isExpired(entry) {
 			entry.Secret = ""
-			fmt.Print(formatMetadata(
-				name, entry, expiredStatus(colorOutputEnabled(os.Stdout))))
+			theme := cliThemeFor(os.Stdout)
+			fmt.Print(formatMetadata(name, entry, expiredStatus(theme), theme))
 			return fmt.Errorf("entry %q is expired; secret was not copied", name)
 		}
 		secret := []byte(entry.Secret)
@@ -202,9 +208,11 @@ func run(arguments []string) error {
 			return err
 		}
 		if !copyOnly {
-			fmt.Print(formatMetadata(name, entry, ""))
+			fmt.Print(formatMetadata(name, entry, "", cliThemeFor(os.Stdout)))
 		}
-		fmt.Fprintln(os.Stderr, "Secret copied; clipboard will be cleared in 1 minute.")
+		theme := cliThemeFor(os.Stderr)
+		fmt.Fprintln(os.Stderr, theme.warning.Render(
+			"Secret copied; clipboard will be cleared in 1 minute."))
 		return nil
 	case "edit":
 		if len(args) != 1 {
@@ -230,7 +238,9 @@ func run(arguments []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Exported %d encrypted entries to %s\n", count, args[0])
+		theme := cliThemeFor(os.Stdout)
+		fmt.Println(theme.success.Render(
+			fmt.Sprintf("Exported %d encrypted entries to %s", count, args[0])))
 		return nil
 	case "rm":
 		if len(args) != 1 {
@@ -254,7 +264,7 @@ func run(arguments []string) error {
 		if err := vault.ChangePassword(newPassword); err != nil {
 			return err
 		}
-		fmt.Println("Master password changed.")
+		fmt.Println(cliThemeFor(os.Stdout).success.Render("Master password changed."))
 		return nil
 	case "check":
 		if len(args) != 0 {
@@ -263,12 +273,14 @@ func run(arguments []string) error {
 		failures := vault.Check()
 		if len(failures) != 0 {
 			for _, failure := range failures {
-				fmt.Fprintln(os.Stderr, failure)
+				fmt.Fprintln(os.Stderr, cliThemeFor(os.Stderr).danger.Render(failure.Error()))
 			}
 			return fmt.Errorf("vault check failed for %d entries", len(failures))
 		}
 		entries, _ := vault.List()
-		fmt.Printf("Vault check passed: %d entries.\n", len(entries))
+		theme := cliThemeFor(os.Stdout)
+		fmt.Println(theme.success.Render(
+			fmt.Sprintf("Vault check passed: %d entries.", len(entries))))
 		return nil
 	default:
 		return fmt.Errorf("unknown command %q\n%s", command, usage())
