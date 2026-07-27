@@ -1,0 +1,20 @@
+.codex/
+.vscode/
+
+# Go build output
+build/
+*.exe
+*.test
+*.out
+
+# Local caches and temporary files
+.cache/
+*.tmp
+*.log
+
+# Vault data and encrypted exports
+*.pm
+*.pmb
+vault.json
+pm.json
+.env
