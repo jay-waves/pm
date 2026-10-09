@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -8,6 +10,58 @@ import (
 	"strings"
 	"testing"
 )
+
+func TestMachineOutputOptions(t *testing.T) {
+	args, jsonOutput, err := parseJSON([]string{"service/account", "--json"})
+	if err != nil || !jsonOutput || strings.Join(args, ",") != "service/account" {
+		t.Fatalf("parseJSON() = %v, %v, %v", args, jsonOutput, err)
+	}
+	args, jsonOutput, err = parseJSON([]string{"service/account"})
+	if err != nil || jsonOutput || strings.Join(args, ",") != "service/account" {
+		t.Fatalf("parseJSON() default = %v, %v, %v", args, jsonOutput, err)
+	}
+	args, disabled, err := parseNoColor([]string{"get", "--no-color", "service/account"})
+	if err != nil || !disabled || strings.Join(args, ",") != "get,service/account" {
+		t.Fatalf("parseNoColor() = %v, %v, %v", args, disabled, err)
+	}
+	if _, _, err := parseJSON([]string{"--json", "--json"}); err == nil {
+		t.Fatal("duplicate --json was accepted")
+	}
+}
+
+func TestJSONOutputIsSingleDocumentOnStdout(t *testing.T) {
+	file, err := os.CreateTemp(t.TempDir(), "output-*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := newEntry()
+	entry.Secret = "program-secret"
+	value := struct {
+		Name string `json:"name"`
+		Entry
+		Expired bool `json:"expired"`
+	}{Name: "service/account", Entry: entry}
+	if err := writeJSON(file, value); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	text, err := os.ReadFile(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.HasSuffix(text, []byte("\n")) {
+		t.Fatalf("JSON output has no trailing newline: %q", text)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(text, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["name"] != "service/account" || decoded["secret"] != "program-secret" {
+		t.Fatalf("unexpected JSON output: %s", text)
+	}
+}
 
 func TestVaultLifecycle(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "vault")
@@ -41,7 +95,7 @@ func TestVaultLifecycle(t *testing.T) {
 	if err != nil || strings.Join(names, ",") != "github/personal" {
 		t.Fatalf("List() = %v, %v", names, err)
 	}
-	if failures := vault.Check(); len(failures) != 0 {
+	if failures := vault.checkIntegrity(); len(failures) != 0 {
 		t.Fatal(failures)
 	}
 	if err := vault.ChangePassword([]byte("new password")); err != nil {

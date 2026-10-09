@@ -35,7 +35,7 @@ type backupEntry struct {
 }
 
 func exportEncryptedBackup(vault *Vault, destination string) (int, error) {
-	if failures := vault.Check(); len(failures) != 0 {
+	if failures := vault.checkIntegrity(); len(failures) != 0 {
 		return 0, fmt.Errorf("refusing to export a damaged vault: %w", failures[0])
 	}
 	config := vault.config
@@ -205,7 +205,7 @@ func importEncryptedBackup(target, source string, password []byte) (int, error) 
 	if err != nil {
 		return 0, fmt.Errorf("import validation failed: %w", err)
 	}
-	failures := imported.Check()
+	failures := imported.checkIntegrity()
 	imported.Close()
 	if len(failures) != 0 {
 		return 0, fmt.Errorf("import validation failed: %w", failures[0])

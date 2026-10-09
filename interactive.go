@@ -7,6 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/huh/v2"
 )
 
@@ -214,7 +215,17 @@ func safeNotesField(value *string) *huh.Text {
 }
 
 func runForm(form *huh.Form) error {
-	if err := form.WithTheme(formTheme).Run(); err != nil {
+	input, output, err := tea.OpenTTY()
+	if err != nil {
+		return fmt.Errorf("could not open the controlling terminal: %w", err)
+	}
+	defer input.Close()
+	defer output.Close()
+	if err := form.
+		WithTheme(formTheme).
+		WithInput(input).
+		WithOutput(output).
+		Run(); err != nil {
 		if errors.Is(err, huh.ErrUserAborted) {
 			return errCancelled
 		}
@@ -224,13 +235,7 @@ func runForm(form *huh.Form) error {
 }
 
 func runField(field huh.Field) error {
-	if err := huh.Run(field.WithTheme(formTheme)); err != nil {
-		if errors.Is(err, huh.ErrUserAborted) {
-			return errCancelled
-		}
-		return err
-	}
-	return nil
+	return runForm(huh.NewForm(huh.NewGroup(field)))
 }
 
 func validateIdentity(value string) error {

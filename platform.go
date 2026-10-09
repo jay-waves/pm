@@ -13,9 +13,15 @@ import (
 )
 
 func readPassword(prompt string) ([]byte, error) {
-	fmt.Fprint(os.Stderr, cliThemeFor(os.Stderr).accent.Render(prompt))
-	password, err := term.ReadPassword(int(os.Stdin.Fd()))
-	fmt.Fprintln(os.Stderr)
+	input, output, err := openUserTerminal()
+	if err != nil {
+		return nil, fmt.Errorf("could not open the controlling terminal: %w", err)
+	}
+	defer input.Close()
+	defer output.Close()
+	fmt.Fprint(output, cliThemeFor(output).accent.Render(prompt))
+	password, err := term.ReadPassword(int(input.Fd()))
+	fmt.Fprintln(output)
 	if err != nil {
 		return nil, fmt.Errorf("could not read password: %w", err)
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/subtle"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -9,31 +10,39 @@ import (
 	"time"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 const clipboardClearDelay = time.Minute
 
 func usage() string {
 	return `pm ` + version + ` - lightweight offline password manager
 
 Usage:
-  pm init
-  pm add <organization/project>
-  pm get [-c] <organization/project>
+  pm [--no-color] init
+  pm [--no-color] add <organization/project>
+  pm [--no-color] get [-c] [--json] <organization/project>
   pm edit <organization/project>
   pm rm <organization/project>
   pm mv <source> <destination>
-  pm ls
+  pm [--no-color] ls [--json]
   pm find <query>
   pm passwd
   pm generate [--length <number>]
+  pm run [--env-file <file>] -- <command> [arguments...]
   pm export <backup-file>
   pm import <backup-file>
-  pm check
+
+Options:
+  --no-color  Disable colored output
+  --json      Output JSON (get and ls only)
 `
 }
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		var exitError *commandExitError
+		if errors.As(err, &exitError) {
+			os.Exit(exitError.code)
+		}
 		theme := cliThemeFor(os.Stderr)
 		fmt.Fprintln(os.Stderr, theme.strong(theme.danger, "pm:"), err)
 		os.Exit(1)
@@ -41,6 +50,11 @@ func main() {
 }
 
 func run(arguments []string) error {
+	var err error
+	arguments, noColor, err = parseNoColor(arguments)
+	if err != nil {
+		return err
+	}
 	if len(arguments) == 0 || arguments[0] == "-h" || arguments[0] == "--help" {
 		fmt.Print(formatUsageOutput(usage(), cliThemeFor(os.Stdout)))
 		return nil
@@ -62,6 +76,14 @@ func run(arguments []string) error {
 
 	command := arguments[0]
 	args := arguments[1:]
+	var runConfiguration *runOptions
+	if command == "run" {
+		options, err := parseRunArgs(args)
+		if err != nil {
+			return err
+		}
+		runConfiguration = &options
+	}
 	if command == "init" {
 		if len(args) != 0 {
 			return errors.New("usage: pm init")
@@ -127,6 +149,13 @@ func run(arguments []string) error {
 		if command == "find" {
 			expected = 1
 		}
+		jsonOutput := false
+		if command == "ls" {
+			args, jsonOutput, err = parseJSON(args)
+			if err != nil {
+				return fmt.Errorf("usage: pm ls [--json]: %w", err)
+			}
+		}
 		if len(args) != expected {
 			return fmt.Errorf("usage: pm %s%s", command, map[bool]string{true: " <query>"}[command == "find"])
 		}
@@ -143,6 +172,11 @@ func run(arguments []string) error {
 			entries, err := vault.List()
 			if err != nil {
 				return err
+			}
+			if jsonOutput {
+				return writeJSON(os.Stdout, struct {
+					Entries []string `json:"entries"`
+				}{Entries: entries})
 			}
 			fmt.Print(formatTreeWithTheme(entries, cliThemeFor(os.Stdout)))
 		} else {
@@ -187,9 +221,16 @@ func run(arguments []string) error {
 		}
 		return vault.Add(args[0], entry)
 	case "get":
+		args, jsonOutput, err := parseJSON(args)
+		if err != nil {
+			return fmt.Errorf("usage: pm get [-c] [--json] <organization/project>: %w", err)
+		}
 		copyOnly, name, err := parseGetArgs(args)
 		if err != nil {
 			return err
+		}
+		if jsonOutput && copyOnly {
+			return errors.New("--copy-only cannot be used with --json")
 		}
 		entry, err := vault.Get(name)
 		if err != nil {
@@ -197,9 +238,19 @@ func run(arguments []string) error {
 		}
 		if isExpired(entry) {
 			entry.Secret = ""
+			if jsonOutput {
+				return fmt.Errorf("entry %q is expired; secret was not returned", name)
+			}
 			theme := cliThemeFor(os.Stdout)
 			fmt.Print(formatMetadata(name, entry, expiredStatus(theme), theme))
 			return fmt.Errorf("entry %q is expired; secret was not copied", name)
+		}
+		if jsonOutput {
+			return writeJSON(os.Stdout, struct {
+				Name string `json:"name"`
+				Entry
+				Expired bool `json:"expired"`
+			}{Name: name, Entry: entry, Expired: false})
 		}
 		secret := []byte(entry.Secret)
 		entry.Secret = ""
@@ -266,22 +317,8 @@ func run(arguments []string) error {
 		}
 		fmt.Println(cliThemeFor(os.Stdout).success.Render("Master password changed."))
 		return nil
-	case "check":
-		if len(args) != 0 {
-			return errors.New("usage: pm check")
-		}
-		failures := vault.Check()
-		if len(failures) != 0 {
-			for _, failure := range failures {
-				fmt.Fprintln(os.Stderr, cliThemeFor(os.Stderr).danger.Render(failure.Error()))
-			}
-			return fmt.Errorf("vault check failed for %d entries", len(failures))
-		}
-		entries, _ := vault.List()
-		theme := cliThemeFor(os.Stdout)
-		fmt.Println(theme.success.Render(
-			fmt.Sprintf("Vault check passed: %d entries.", len(entries))))
-		return nil
+	case "run":
+		return runWithSecrets(vault, *runConfiguration)
 	default:
 		return fmt.Errorf("unknown command %q\n%s", command, usage())
 	}
@@ -324,5 +361,49 @@ func parseGetArgs(args []string) (bool, string, error) {
 	if len(args) == 2 && (args[0] == "-c" || args[0] == "--copy-only") {
 		return true, args[1], nil
 	}
-	return false, "", errors.New("usage: pm get [-c] <organization/project>")
+	return false, "", errors.New("usage: pm get [-c] [--json] <organization/project>")
+}
+
+func parseNoColor(args []string) ([]string, bool, error) {
+	out := make([]string, 0, len(args))
+	disabled := false
+	afterSeparator := false
+	for _, arg := range args {
+		if arg == "--" {
+			afterSeparator = true
+			out = append(out, arg)
+			continue
+		}
+		if !afterSeparator && arg == "--no-color" {
+			if disabled {
+				return nil, false, errors.New("--no-color may only be specified once")
+			}
+			disabled = true
+			continue
+		}
+		out = append(out, arg)
+	}
+	return out, disabled, nil
+}
+
+func parseJSON(args []string) ([]string, bool, error) {
+	out := make([]string, 0, len(args))
+	seen := false
+	for _, arg := range args {
+		if arg != "--json" {
+			out = append(out, arg)
+			continue
+		}
+		if seen {
+			return nil, false, errors.New("--json may only be specified once")
+		}
+		seen = true
+	}
+	return out, seen, nil
+}
+
+func writeJSON(file *os.File, value any) error {
+	encoder := json.NewEncoder(file)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(value)
 }

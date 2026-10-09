@@ -8,6 +8,8 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+var noColor bool
+
 var formTheme huh.Theme = huh.ThemeFunc(formStyles)
 
 func formStyles(isDark bool) *huh.Styles {
@@ -36,7 +38,7 @@ type cliTheme struct {
 }
 
 func cliThemeFor(file *os.File) cliTheme {
-	if !colorOutputEnabled(file) {
+	if noColor || !colorOutputEnabled(file) {
 		return cliTheme{}
 	}
 	return cliTheme{

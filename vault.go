@@ -360,7 +360,7 @@ func (vault *Vault) List() ([]string, error) {
 	return entries, err
 }
 
-func (vault *Vault) Check() []error {
+func (vault *Vault) checkIntegrity() []error {
 	names, err := vault.List()
 	if err != nil {
 		return []error{err}
